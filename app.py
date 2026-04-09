@@ -54,7 +54,7 @@ action_rules = {
     'Desarme': {'cor': '#1abc9c', 'seta': False, 'tem_resultado': True}
 }
 
-# --- SIDEBAR: ESTÉTICA ---
+# --- SIDEBAR: ESTÉTICA E TÍTULO ---
 st.sidebar.header("🎨 Configuração do Campo")
 p_theme = st.sidebar.selectbox("Tema:", ["Branco Total", "Grass", "Dark", "Midnight"])
 is_strip = st.sidebar.checkbox("Relvado Cortado?", value=False)
@@ -67,6 +67,11 @@ themes = {
     "Midnight": {"pitch": "#1a1c2c", "line": "#94a3b8", "stripe": "#23263a"}
 }
 c_theme = themes[p_theme]
+
+# TÍTULO PERSONALIZADO DO RELATÓRIO
+st.sidebar.markdown("---")
+st.sidebar.header("📝 Dados do Relatório")
+report_custom_title = st.sidebar.text_input("Título do Relatório PDF", "Relatório Técnico-Tático")
 
 # --- SIDEBAR: REGISTO ---
 st.sidebar.markdown("---")
@@ -111,6 +116,7 @@ with st.sidebar.form("add_form"):
         st.rerun()
 
 # --- ÁREA PRINCIPAL ---
+st.subheader("🔍 Filtros de Visualização")
 f_col1, f_col2 = st.columns(2)
 sel_p = f_col1.selectbox("Filtrar Jogador:", ["Todos"] + sorted(st.session_state.actions['Jogador'].unique().tolist()))
 sel_a = f_col2.selectbox("Filtrar Ação:", ["Todas"] + list(action_rules.keys()))
@@ -135,88 +141,91 @@ for _, row in df_plot.iterrows():
         pitch.scatter(row.x, row.y, s=ms, c=row.Cor, edgecolors='gray' if p_theme=="Branco Total" else 'white', marker=marker, ax=ax, zorder=3)
 st.pyplot(fig)
 
-# --- GESTÃO E TABELAS ---
+# --- GESTÃO E EXPORTAÇÃO ---
 st.markdown("---")
 if not st.session_state.actions.empty:
-    col_t, col_m = st.columns([2, 1])
-    with col_t:
-        st.subheader("📋 Log de Ações")
-        log_view = df_plot.copy()
-        log_view['xG'] = log_view.apply(lambda r: f"{r.xG:.2f}" if r.Ação == "Remate" else "-", axis=1)
-        
-        # Filtrar colunas visíveis na app
-        cols = ['Jogador', 'Ação', 'Resultado']
-        if sel_a in ["Remate", "Todas"]: cols += ['xG', 'Detalhes']
-        st.dataframe(log_view[cols], use_container_width=True)
     
-    with col_m:
-        st.subheader("🗑️ Gestão")
-        if st.button("Apagar Última"):
-            st.session_state.actions = st.session_state.actions.iloc[:-1]; st.rerun()
-        
-        idx_del = st.selectbox("Apagar por ID:", st.session_state.actions.index, 
-                               format_func=lambda i: f"ID {i}: {st.session_state.actions.loc[i, 'Ação']}")
-        if st.button("Confirmar Eliminação"):
-            st.session_state.actions = st.session_state.actions.drop(idx_del).reset_index(drop=True); st.rerun()
-        
-        if st.button("🚨 Limpar Tudo"):
-            st.session_state.actions = pd.DataFrame(columns=st.session_state.actions.columns); st.rerun()
-
     # --- PDF GENERATOR ---
-    def generate_pdf(df_filt, fig_pitch):
+    def generate_pdf(df_filt, fig_pitch, report_title):
         pdf = FPDF()
         pdf.add_page()
+        
+        # Logo FMH
         if os.path.exists(fmh_logo_path):
             pdf.image(fmh_logo_path, x=165, y=10, w=30)
         
-        pdf.set_font("Helvetica", "B", 16); pdf.set_y(15)
-        pdf.cell(150, 10, "Relatorio de Acoes Tecnico-Taticas", ln=True)
-        pdf.set_font("Helvetica", "", 11); pdf.cell(150, 7, "Faculdade de Motricidade Humana", ln=True)
+        # Cabeçalho
+        pdf.set_font("Helvetica", "B", 18)
+        pdf.set_y(15)
+        pdf.cell(150, 10, report_title, ln=True)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.cell(150, 6, "Faculdade de Motricidade Humana", ln=True)
+        pdf.cell(150, 6, f"Filtros Aplicados: {sel_p} | {sel_a}", ln=True)
         
-        # Imagem do Campo
+        # Mapa de Campo
         img_buf = io.BytesIO()
         fig_pitch.savefig(img_buf, format="png", bbox_inches='tight', dpi=150)
         pdf.image(img_buf, x=15, y=45, w=180)
         
-        # Tabela Estatística no PDF
-        pdf.set_y(175)
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(190, 10, "Tabela de Contagens Detalhada", ln=True)
+        # Legenda das Cores/Ações (O "Logo" das ações)
+        pdf.set_y(172)
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.cell(190, 8, "Legenda de Cores e Simbolos:", ln=True)
+        pdf.set_font("Helvetica", "", 8)
+        
+        # Gerar legenda baseada nas regras
+        for act, info in action_rules.items():
+            # Desenhar um quadradinho colorido como "logo"
+            r, g, b = tuple(int(info['cor'].lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
+            pdf.set_fill_color(r, g, b)
+            pdf.rect(pdf.get_x(), pdf.get_y()+1, 3, 3, 'F')
+            pdf.set_x(pdf.get_x() + 5)
+            pdf.cell(30, 5, f"{act} ({'Seta' if info['seta'] else 'Marca'})")
+        pdf.ln(8)
+
+        # Tabela Estatística
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(190, 8, "Tabela de Resultados:", ln=True)
         pdf.set_font("Helvetica", "B", 9)
         pdf.set_fill_color(230, 230, 230)
         
-        # Cabeçalho da Tabela
-        headers = ["Ação", "Sucesso", "Insucesso", "Total", "xG Acum."]
-        widths = [45, 35, 35, 35, 40]
+        headers = ["Acao", "Sucesso", "Insucesso", "Total", "xG Acum."]
+        ws = [45, 35, 35, 35, 40]
         for i, h in enumerate(headers):
-            pdf.cell(widths[i], 8, h, border=1, align="C", fill=True)
+            pdf.cell(ws[i], 8, h, border=1, align="C", fill=True)
         pdf.ln()
 
         pdf.set_font("Helvetica", "", 9)
         for act in df_filt['Ação'].unique():
             temp = df_filt[df_filt['Ação'] == act]
-            
-            # Contagens baseadas nas regras
-            if action_rules[act]['tem_resultado']:
-                suc = str(len(temp[temp['Resultado'] == 'Sucesso']))
-                ins = str(len(temp[temp['Resultado'] == 'Insucesso']))
-            else:
-                suc, ins = "-", "-" # Para Interceção, Bloqueio, Condução
-                
+            suc = str(len(temp[temp['Resultado'] == 'Sucesso'])) if action_rules[act]['tem_resultado'] else "-"
+            ins = str(len(temp[temp['Resultado'] == 'Insucesso'])) if action_rules[act]['tem_resultado'] else "-"
             total = str(len(temp))
             xg_sum = f"{temp['xG'].sum():.2f}" if act == "Remate" else "-"
             
-            pdf.cell(widths[0], 8, act, border=1, align="C")
-            pdf.cell(widths[1], 8, suc, border=1, align="C")
-            pdf.cell(widths[2], 8, ins, border=1, align="C")
-            pdf.cell(widths[3], 8, total, border=1, align="C")
-            pdf.cell(widths[4], 8, xg_sum, border=1, align="C")
+            pdf.cell(ws[0], 8, act, border=1, align="C")
+            pdf.cell(ws[1], 8, suc, border=1, align="C")
+            pdf.cell(ws[2], 8, ins, border=1, align="C")
+            pdf.cell(ws[3], 8, total, border=1, align="C")
+            pdf.cell(ws[4], 8, xg_sum, border=1, align="C")
             pdf.ln()
             
         return bytes(pdf.output())
 
-    st.markdown("---")
-    pdf_bytes = generate_pdf(df_plot, fig)
-    st.download_button("📥 Descarregar PDF ", pdf_bytes, "relatorio_FMH.pdf", "application/pdf")
+    # Área de Botões
+    col_pdf, col_del = st.columns([1, 1])
+    with col_pdf:
+        st.subheader("📄 Exportar")
+        pdf_bytes = generate_pdf(df_plot, fig, report_custom_title)
+        st.download_button("📥 Descarregar PDF", pdf_bytes, f"relatorio_FMH.pdf", "application/pdf")
+    
+    with col_del:
+        st.subheader("🗑️ Gestão")
+        if st.button("🚨 Limpar Tudo"):
+            st.session_state.actions = pd.DataFrame(columns=st.session_state.actions.columns)
+            st.rerun()
+
+    # Tabela detalhada na App
+    st.dataframe(df_plot[['Jogador', 'Ação', 'Resultado', 'xG', 'Detalhes']], use_container_width=True)
 else:
-    st.info("Registe ações para gerar o relatório com as tabelas.")
+    st.info("Registe ações para gerar o mapa e o relatório.")
