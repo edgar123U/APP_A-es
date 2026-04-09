@@ -54,7 +54,7 @@ action_rules = {
     'Desarme': {'cor': '#1abc9c', 'seta': False, 'tem_resultado': True}
 }
 
-# --- SIDEBAR: ESTÉTICA E TÍTULO ---
+# --- SIDEBAR: CONFIGURAÇÃO ---
 st.sidebar.header("🎨 Configuração do Campo")
 p_theme = st.sidebar.selectbox("Tema:", ["Branco Total", "Grass", "Dark", "Midnight"])
 is_strip = st.sidebar.checkbox("Relvado Cortado?", value=False)
@@ -68,7 +68,6 @@ themes = {
 }
 c_theme = themes[p_theme]
 
-# TÍTULO PERSONALIZADO DO RELATÓRIO
 st.sidebar.markdown("---")
 st.sidebar.header("📝 Dados do Relatório")
 report_custom_title = st.sidebar.text_input("Título do Relatório PDF", "Relatório Técnico-Tático")
@@ -96,27 +95,23 @@ with st.sidebar.form("add_form"):
     if v_mode == "Seta":
         c3, c4 = st.columns(2)
         ex, ey = c3.slider("X Fim", 0.0, 105.0, 60.0), c4.slider("Y Fim", 0.0, 68.0, 40.0)
-    
     res = "Sucesso"
     if rule['tem_resultado']:
         res = st.radio("Resultado", ["Sucesso", "Insucesso"], horizontal=True)
-    
     if st.form_submit_button("Adicionar Ação"):
         final_p = p_input if p_input.strip() != "" else "Geral/Equipa"
         xg_val = calculate_advanced_xg(x, y, is_h, sit_p) if a_type == 'Remate' else 0.0
-        detalhes_extra = f"{sit_p}{' (Cabeça)' if is_h else ''}" if a_type == 'Remate' else "-"
-        
         new_row = {
             'Jogador': final_p, 'Ação': a_type, 'x': x, 'y': y, 'end_x': ex, 'end_y': ey,
             'Resultado': res, 'Visualizacao': v_mode, 
             'Cor': rule['cor'] if res == "Sucesso" else "#e74c3c",
-            'xG': xg_val, 'Detalhes': detalhes_extra
+            'xG': xg_val, 'Detalhes': f"{sit_p}{' (Cabeça)' if is_h else ''}" if a_type == 'Remate' else "-"
         }
         st.session_state.actions = pd.concat([st.session_state.actions, pd.DataFrame([new_row])], ignore_index=True)
         st.rerun()
 
 # --- ÁREA PRINCIPAL ---
-st.subheader("🔍 Filtros de Visualização")
+st.subheader("🔍 Filtros")
 f_col1, f_col2 = st.columns(2)
 sel_p = f_col1.selectbox("Filtrar Jogador:", ["Todos"] + sorted(st.session_state.actions['Jogador'].unique().tolist()))
 sel_a = f_col2.selectbox("Filtrar Ação:", ["Todas"] + list(action_rules.keys()))
@@ -141,56 +136,56 @@ for _, row in df_plot.iterrows():
         pitch.scatter(row.x, row.y, s=ms, c=row.Cor, edgecolors='gray' if p_theme=="Branco Total" else 'white', marker=marker, ax=ax, zorder=3)
 st.pyplot(fig)
 
-# --- GESTÃO E EXPORTAÇÃO ---
-st.markdown("---")
+# --- EXPORTAÇÃO E GESTÃO ---
 if not st.session_state.actions.empty:
-    
-    # --- PDF GENERATOR ---
-    def generate_pdf(df_filt, fig_pitch, report_title):
+    def generate_pdf(df_filt, fig_pitch, report_title, current_sel_a):
         pdf = FPDF()
         pdf.add_page()
-        
-        # Logo FMH
         if os.path.exists(fmh_logo_path):
             pdf.image(fmh_logo_path, x=165, y=10, w=30)
         
-        # Cabeçalho
-        pdf.set_font("Helvetica", "B", 18)
-        pdf.set_y(15)
+        # Cabeçalho Limpo
+        pdf.set_font("Helvetica", "B", 18); pdf.set_y(15)
         pdf.cell(150, 10, report_title, ln=True)
         pdf.set_font("Helvetica", "", 10)
         pdf.cell(150, 6, "Faculdade de Motricidade Humana", ln=True)
-        pdf.cell(150, 6, f"Filtros Aplicados: {sel_p} | {sel_a}", ln=True)
         
-        # Mapa de Campo
+        # Campo
         img_buf = io.BytesIO()
         fig_pitch.savefig(img_buf, format="png", bbox_inches='tight', dpi=150)
-        pdf.image(img_buf, x=15, y=45, w=180)
+        pdf.image(img_buf, x=15, y=35, w=180)
         
-        # Legenda das Cores/Ações (O "Logo" das ações)
+        # Legenda só se for relatório Geral ("Todas")
         pdf.set_y(172)
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(190, 8, "Legenda de Cores e Simbolos:", ln=True)
-        pdf.set_font("Helvetica", "", 8)
-        
-        # Gerar legenda baseada nas regras
-        for act, info in action_rules.items():
-            # Desenhar um quadradinho colorido como "logo"
-            r, g, b = tuple(int(info['cor'].lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
-            pdf.set_fill_color(r, g, b)
-            pdf.rect(pdf.get_x(), pdf.get_y()+1, 3, 3, 'F')
-            pdf.set_x(pdf.get_x() + 5)
-            pdf.cell(30, 5, f"{act} ({'Seta' if info['seta'] else 'Marca'})")
-        pdf.ln(8)
+        if current_sel_a == "Todas":
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.cell(190, 8, "Legenda de Cores e Simbolos:", ln=True)
+            pdf.set_font("Helvetica", "", 8)
+            for act, info in action_rules.items():
+                r, g, b = tuple(int(info['cor'].lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
+                pdf.set_fill_color(r, g, b)
+                pdf.rect(pdf.get_x(), pdf.get_y()+1, 3, 3, 'F')
+                pdf.set_x(pdf.get_x() + 5)
+                pdf.cell(28, 5, act) # Nome limpo da ação
+            pdf.ln(8)
+        else:
+            pdf.ln(2)
 
-        # Tabela Estatística
+        # Tabela Estatística Detalhada
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(190, 8, "Tabela de Resultados:", ln=True)
         pdf.set_font("Helvetica", "B", 9)
         pdf.set_fill_color(230, 230, 230)
         
-        headers = ["Acao", "Sucesso", "Insucesso", "Total", "xG Acum."]
-        ws = [45, 35, 35, 35, 40]
+        # Verificar se existe Remate para mostrar xG
+        has_remate = "Remate" in df_filt['Ação'].values
+        if has_remate:
+            headers = ["Acao", "Sucesso", "Insucesso", "Total", "xG Acum."]
+            ws = [45, 35, 35, 35, 40]
+        else:
+            headers = ["Acao", "Sucesso", "Insucesso", "Total"]
+            ws = [55, 45, 45, 45]
+
         for i, h in enumerate(headers):
             pdf.cell(ws[i], 8, h, border=1, align="C", fill=True)
         pdf.ln()
@@ -201,31 +196,28 @@ if not st.session_state.actions.empty:
             suc = str(len(temp[temp['Resultado'] == 'Sucesso'])) if action_rules[act]['tem_resultado'] else "-"
             ins = str(len(temp[temp['Resultado'] == 'Insucesso'])) if action_rules[act]['tem_resultado'] else "-"
             total = str(len(temp))
-            xg_sum = f"{temp['xG'].sum():.2f}" if act == "Remate" else "-"
             
             pdf.cell(ws[0], 8, act, border=1, align="C")
             pdf.cell(ws[1], 8, suc, border=1, align="C")
             pdf.cell(ws[2], 8, ins, border=1, align="C")
             pdf.cell(ws[3], 8, total, border=1, align="C")
-            pdf.cell(ws[4], 8, xg_sum, border=1, align="C")
+            if has_remate:
+                xg_sum = f"{temp['xG'].sum():.2f}" if act == "Remate" else "-"
+                pdf.cell(ws[4], 8, xg_sum, border=1, align="C")
             pdf.ln()
             
         return bytes(pdf.output())
 
-    # Área de Botões
-    col_pdf, col_del = st.columns([1, 1])
-    with col_pdf:
-        st.subheader("📄 Exportar")
-        pdf_bytes = generate_pdf(df_plot, fig, report_custom_title)
-        st.download_button("📥 Descarregar PDF", pdf_bytes, f"relatorio_FMH.pdf", "application/pdf")
-    
-    with col_del:
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        st.subheader("📄 Exportação")
+        pdf_bytes = generate_pdf(df_plot, fig, report_custom_title, sel_a)
+        st.download_button("📥 Descarregar PDF", pdf_bytes, "relatorio_FMH.pdf", "application/pdf")
+    with col_btn2:
         st.subheader("🗑️ Gestão")
         if st.button("🚨 Limpar Tudo"):
-            st.session_state.actions = pd.DataFrame(columns=st.session_state.actions.columns)
-            st.rerun()
+            st.session_state.actions = pd.DataFrame(columns=df.columns); st.rerun()
 
-    # Tabela detalhada na App
     st.dataframe(df_plot[['Jogador', 'Ação', 'Resultado', 'xG', 'Detalhes']], use_container_width=True)
 else:
-    st.info("Registe ações para gerar o mapa e o relatório.")
+    st.info("Registe ações para gerar o mapa.")
