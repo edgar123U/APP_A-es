@@ -23,7 +23,7 @@ with col_logo:
 with col_title:
     st.title("Relatório de Ações Tecnico-Táticas")
 
-# 1. Estado da Sessão (Base de Dados)
+# 1. Estado da Sessão
 if 'actions' not in st.session_state:
     st.session_state.actions = pd.DataFrame(columns=[
         'Jogador', 'Ação', 'x', 'y', 'end_x', 'end_y', 'Resultado', 
@@ -54,7 +54,7 @@ action_rules = {
     'Desarme': {'cor': '#1abc9c', 'seta': False, 'tem_resultado': True}
 }
 
-# --- SIDEBAR: ESTÉTICA DO CAMPO ---
+# --- SIDEBAR: ESTÉTICA ---
 st.sidebar.header("🎨 Configuração do Campo")
 p_theme = st.sidebar.selectbox("Tema:", ["Branco Total", "Grass", "Dark", "Midnight"])
 is_strip = st.sidebar.checkbox("Relvado Cortado?", value=False)
@@ -74,15 +74,13 @@ st.sidebar.header("🕹️ Registar Ação")
 p_input = st.sidebar.text_input("Jogador (opcional)")
 a_type = st.sidebar.selectbox("Tipo de Ação", list(action_rules.keys()))
 
-# Variáveis específicas de Remate (Só aparecem se for Remate)
-is_h, sit_p = False, "Jogo Corrido"
+is_h, sit_p, v_mode = False, "Jogo Corrido", "Marca"
 rule = action_rules[a_type]
-v_mode = "Marca"
 
 if a_type == 'Remate':
     v_mode = st.sidebar.radio("Visualização:", ["Marca", "Seta"], horizontal=True)
     is_h = st.sidebar.checkbox("De Cabeça?")
-    sit_p = st.sidebar.selectbox("Situação Anterior:", ["Jogo Corrido", "Após Cruzamento", "Após Drible"])
+    sit_p = st.sidebar.selectbox("Origem:", ["Jogo Corrido", "Após Cruzamento", "Após Drible"])
 elif rule['seta']:
     v_mode = "Seta"
 
@@ -100,9 +98,9 @@ with st.sidebar.form("add_form"):
     
     if st.form_submit_button("Adicionar Ação"):
         final_p = p_input if p_input.strip() != "" else "Geral/Equipa"
-        xg_val = calculate_advanced_xg(x, y, is_h, sit_p) if a_type == 'Remate' else 0
         
-        # Detalhes: só preenche se for Remate
+        # xG SÓ PARA REMATES
+        xg_val = calculate_advanced_xg(x, y, is_h, sit_p) if a_type == 'Remate' else 0.0
         detalhes_extra = f"{sit_p}{' (Cabeça)' if is_h else ''}" if a_type == 'Remate' else "-"
         
         new_row = {
@@ -145,22 +143,23 @@ if not st.session_state.actions.empty:
     col_t, col_m = st.columns([2, 1])
     with col_t:
         st.subheader("📋 Log de Ações")
-        st.dataframe(df_plot[['Jogador', 'Ação', 'Resultado', 'xG', 'Detalhes']], use_container_width=True)
+        # Mostrar xG apenas se for remate na visualização da tabela
+        log_view = df_plot.copy()
+        log_view['xG'] = log_view.apply(lambda r: f"{r.xG:.2f}" if r.Ação == "Remate" else "-", axis=1)
+        st.dataframe(log_view[['Jogador', 'Ação', 'Resultado', 'xG', 'Detalhes']], use_container_width=True)
+    
     with col_m:
         st.subheader("🗑️ Gestão")
         if st.button("Apagar Última"):
-            st.session_state.actions = st.session_state.actions.iloc[:-1]
-            st.rerun()
+            st.session_state.actions = st.session_state.actions.iloc[:-1]; st.rerun()
         
         idx_del = st.selectbox("Apagar por ID:", st.session_state.actions.index, 
                                format_func=lambda i: f"ID {i}: {st.session_state.actions.loc[i, 'Ação']}")
         if st.button("Confirmar Eliminação"):
-            st.session_state.actions = st.session_state.actions.drop(idx_del).reset_index(drop=True)
-            st.rerun()
+            st.session_state.actions = st.session_state.actions.drop(idx_del).reset_index(drop=True); st.rerun()
         
         if st.button("🚨 Limpar Tudo"):
-            st.session_state.actions = pd.DataFrame(columns=st.session_state.actions.columns)
-            st.rerun()
+            st.session_state.actions = pd.DataFrame(columns=st.session_state.actions.columns); st.rerun()
 
     # --- PDF ---
     def generate_pdf(df_filt, fig_pitch):
@@ -174,13 +173,19 @@ if not st.session_state.actions.empty:
         fig_pitch.savefig(img_buf, format="png", bbox_inches='tight', dpi=150)
         pdf.image(img_buf, x=15, y=45, w=180)
         pdf.set_y(175); pdf.set_font("Helvetica", "B", 10); pdf.cell(190, 10, "Resumo:", ln=True)
+        
         for act in df_filt['Ação'].unique():
-            tot = len(df_filt[df_filt['Ação'] == act])
-            pdf.cell(190, 7, f"- {act}: {tot} acoes", ln=True)
+            temp = df_filt[df_filt['Ação'] == act]
+            tot = len(temp)
+            if act == "Remate":
+                xg_acum = temp['xG'].sum()
+                pdf.cell(190, 7, f"- {act}: {tot} acoes | xG Acumulado: {xg_acum:.2f}", ln=True)
+            else:
+                pdf.cell(190, 7, f"- {act}: {tot} acoes", ln=True)
         return bytes(pdf.output())
 
     st.markdown("---")
     pdf_bytes = generate_pdf(df_plot, fig)
     st.download_button("📥 Descarregar PDF FMH", pdf_bytes, "relatorio_FMH.pdf", "application/pdf")
 else:
-    st.info("Regista ações para gerar tabelas.")
+    st.info("O campo está pronto. Registe ações para gerar relatórios.")
