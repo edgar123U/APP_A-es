@@ -183,4 +183,4 @@ if not st.session_state.actions.empty:
     pdf_bytes = generate_pdf(df_plot, fig)
     st.download_button("📥 Descarregar PDF FMH", pdf_bytes, "relatorio_FMH.pdf", "application/pdf")
 else:
-    st.info("O campo está pronto. Registe ações para gerar tabelas.")
+    st.info("Regista ações para gerar tabelas.")
