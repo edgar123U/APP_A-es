@@ -54,9 +54,9 @@ action_rules = {
     'Desarme': {'cor': '#1abc9c', 'seta': False, 'tem_resultado': True}
 }
 
-# --- SIDEBAR: ESTÉTICA ---
+# --- SIDEBAR: ESTÉTICA DO CAMPO ---
 st.sidebar.header("🎨 Configuração do Campo")
-pitch_theme = st.sidebar.selectbox("Tema:", ["Branco Total", "Grass", "Dark", "Midnight"])
+p_theme = st.sidebar.selectbox("Tema:", ["Branco Total", "Grass", "Dark", "Midnight"])
 is_strip = st.sidebar.checkbox("Relvado Cortado?", value=False)
 is_pos = st.sidebar.checkbox("Linhas Posicionais?", value=False)
 
@@ -66,22 +66,25 @@ themes = {
     "Dark": {"pitch": "#22312b", "line": "#c7d5cc", "stripe": "#2c3e37"},
     "Midnight": {"pitch": "#1a1c2c", "line": "#94a3b8", "stripe": "#23263a"}
 }
-c_theme = themes[pitch_theme]
+c_theme = themes[p_theme]
 
 # --- SIDEBAR: REGISTO ---
 st.sidebar.markdown("---")
 st.sidebar.header("🕹️ Registar Ação")
-player_name = st.sidebar.text_input("Jogador (opcional)")
-action_type = st.sidebar.selectbox("Tipo de Ação", list(action_rules.keys()))
+p_input = st.sidebar.text_input("Jogador (opcional)")
+a_type = st.sidebar.selectbox("Tipo de Ação", list(action_rules.keys()))
 
-rule = action_rules[action_type]
-is_h, sit_p, v_mode = False, "Jogo Corrido", "Marca"
+# Variáveis específicas de Remate (Só aparecem se for Remate)
+is_h, sit_p = False, "Jogo Corrido"
+rule = action_rules[a_type]
+v_mode = "Marca"
 
-if action_type == 'Remate':
+if a_type == 'Remate':
     v_mode = st.sidebar.radio("Visualização:", ["Marca", "Seta"], horizontal=True)
     is_h = st.sidebar.checkbox("De Cabeça?")
-    sit_p = st.sidebar.selectbox("Origem:", ["Jogo Corrido", "Após Cruzamento", "Após Drible"])
-elif rule['seta']: v_mode = "Seta"
+    sit_p = st.sidebar.selectbox("Situação Anterior:", ["Jogo Corrido", "Após Cruzamento", "Após Drible"])
+elif rule['seta']:
+    v_mode = "Seta"
 
 with st.sidebar.form("add_form"):
     c1, c2 = st.columns(2)
@@ -96,20 +99,22 @@ with st.sidebar.form("add_form"):
         res = st.radio("Resultado", ["Sucesso", "Insucesso"], horizontal=True)
     
     if st.form_submit_button("Adicionar Ação"):
-        final_p = player_name if player_name.strip() != "" else "Geral/Equipa"
-        xg_val = calculate_advanced_xg(x, y, is_h, sit_p) if action_type == 'Remate' else 0
+        final_p = p_input if p_input.strip() != "" else "Geral/Equipa"
+        xg_val = calculate_advanced_xg(x, y, is_h, sit_p) if a_type == 'Remate' else 0
+        
+        # Detalhes: só preenche se for Remate
+        detalhes_extra = f"{sit_p}{' (Cabeça)' if is_h else ''}" if a_type == 'Remate' else "-"
+        
         new_row = {
-            'Jogador': final_p, 'Ação': action_type, 'x': x, 'y': y, 'end_x': ex, 'end_y': ey,
+            'Jogador': final_p, 'Ação': a_type, 'x': x, 'y': y, 'end_x': ex, 'end_y': ey,
             'Resultado': res, 'Visualizacao': v_mode, 
             'Cor': rule['cor'] if res == "Sucesso" else "#e74c3c",
-            'xG': xg_val, 'Detalhes': f"{sit_p} {'(Cabeça)' if is_h else ''}"
+            'xG': xg_val, 'Detalhes': detalhes_extra
         }
         st.session_state.actions = pd.concat([st.session_state.actions, pd.DataFrame([new_row])], ignore_index=True)
         st.rerun()
 
 # --- ÁREA PRINCIPAL ---
-
-# Filtros
 f_col1, f_col2 = st.columns(2)
 sel_p = f_col1.selectbox("Filtrar Jogador:", ["Todos"] + sorted(st.session_state.actions['Jogador'].unique().tolist()))
 sel_a = f_col2.selectbox("Filtrar Ação:", ["Todas"] + list(action_rules.keys()))
@@ -118,7 +123,6 @@ df_plot = st.session_state.actions.copy()
 if sel_p != "Todos": df_plot = df_plot[df_plot['Jogador'] == sel_p]
 if sel_a != "Todas": df_plot = df_plot[df_plot['Ação'] == sel_a]
 
-# Desenho do Campo
 pitch = Pitch(pitch_type='uefa', pitch_color=c_theme['pitch'], line_color=c_theme['line'],
               stripe=is_strip, stripe_color=c_theme['stripe'], positional=is_pos,
               corner_arcs=True, goal_type='box')
@@ -132,68 +136,51 @@ for _, row in df_plot.iterrows():
         marker = 'o'
         if action_rules[row['Ação']]['tem_resultado'] and row['Resultado'] == 'Insucesso':
             marker = 'X'
-        pitch.scatter(row.x, row.y, s=ms, c=row.Cor, edgecolors='gray' if pitch_theme=="Branco Total" else 'white', marker=marker, ax=ax, zorder=3)
-
+        pitch.scatter(row.x, row.y, s=ms, c=row.Cor, edgecolors='gray' if p_theme=="Branco Total" else 'white', marker=marker, ax=ax, zorder=3)
 st.pyplot(fig)
 
-# --- GESTÃO DE DADOS (Tabelas e Apagar) ---
+# --- GESTÃO E TABELAS ---
 st.markdown("---")
 if not st.session_state.actions.empty:
-    col_table, col_manage = st.columns([2, 1])
-
-    with col_table:
+    col_t, col_m = st.columns([2, 1])
+    with col_t:
         st.subheader("📋 Log de Ações")
         st.dataframe(df_plot[['Jogador', 'Ação', 'Resultado', 'xG', 'Detalhes']], use_container_width=True)
-
-    with col_manage:
-        st.subheader("🗑️ Gestão de Ações")
-        
-        # Botão para apagar a última
-        if st.button("Apagar Última Ação"):
+    with col_m:
+        st.subheader("🗑️ Gestão")
+        if st.button("Apagar Última"):
             st.session_state.actions = st.session_state.actions.iloc[:-1]
             st.rerun()
-
-        # Selecionar ação específica para apagar
-        action_to_delete = st.selectbox(
-            "Apagar por Índice:", 
-            options=st.session_state.actions.index,
-            format_func=lambda x: f"ID {x}: {st.session_state.actions.loc[x, 'Jogador']} - {st.session_state.actions.loc[x, 'Ação']}"
-        )
-        if st.button("Confirmar Apagar Selecionada"):
-            st.session_state.actions = st.session_state.actions.drop(action_to_delete).reset_index(drop=True)
+        
+        idx_del = st.selectbox("Apagar por ID:", st.session_state.actions.index, 
+                               format_func=lambda i: f"ID {i}: {st.session_state.actions.loc[i, 'Ação']}")
+        if st.button("Confirmar Eliminação"):
+            st.session_state.actions = st.session_state.actions.drop(idx_del).reset_index(drop=True)
             st.rerun()
-
+        
         if st.button("🚨 Limpar Tudo"):
             st.session_state.actions = pd.DataFrame(columns=st.session_state.actions.columns)
             st.rerun()
 
-    # --- PDF EXPORT ---
+    # --- PDF ---
     def generate_pdf(df_filt, fig_pitch):
         pdf = FPDF()
         pdf.add_page()
-        if os.path.exists(fmh_logo_path):
-            pdf.image(fmh_logo_path, x=165, y=10, w=30)
-        pdf.set_font("Helvetica", "B", 16)
-        pdf.set_y(15)
+        if os.path.exists(fmh_logo_path): pdf.image(fmh_logo_path, x=165, y=10, w=30)
+        pdf.set_font("Helvetica", "B", 16); pdf.set_y(15)
         pdf.cell(150, 10, "Relatorio de Acoes Tecnico-Taticas", ln=True)
-        pdf.set_font("Helvetica", "", 11)
-        pdf.cell(150, 7, "Faculdade de Motricidade Humana", ln=True)
-        
+        pdf.set_font("Helvetica", "", 11); pdf.cell(150, 7, "Faculdade de Motricidade Humana", ln=True)
         img_buf = io.BytesIO()
         fig_pitch.savefig(img_buf, format="png", bbox_inches='tight', dpi=150)
         pdf.image(img_buf, x=15, y=45, w=180)
-        
-        pdf.set_y(175)
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(190, 10, "Resumo:", ln=True)
+        pdf.set_y(175); pdf.set_font("Helvetica", "B", 10); pdf.cell(190, 10, "Resumo:", ln=True)
         for act in df_filt['Ação'].unique():
             tot = len(df_filt[df_filt['Ação'] == act])
             pdf.cell(190, 7, f"- {act}: {tot} acoes", ln=True)
         return bytes(pdf.output())
 
     st.markdown("---")
-    st.subheader("📄 Exportar PDF")
-    pdf_out = generate_pdf(df_plot, fig)
-    st.download_button("📥 Descarregar PDF FMH", pdf_out, f"relatorio_FMH.pdf", "application/pdf")
+    pdf_bytes = generate_pdf(df_plot, fig)
+    st.download_button("📥 Descarregar PDF FMH", pdf_bytes, "relatorio_FMH.pdf", "application/pdf")
 else:
-    st.info("Aguardando inserção de dados.")
+    st.info("O campo está pronto. Registe ações para gerar tabelas.")
