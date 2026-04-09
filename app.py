@@ -11,7 +11,7 @@ import os
 st.set_page_config(page_title="Relatório Tecnico-Tático FMH", layout="wide")
 
 # --- CONFIGURAÇÃO DO LOGO ---
-# No GitHub, usa apenas o nome do ficheiro se ele estiver na mesma pasta
+# No GitHub, garanta que este ficheiro está na mesma pasta
 fmh_logo_path = "faculdade_de_motricidade_humana_logo.jpeg"
 
 # --- CABEÇALHO ---
@@ -108,26 +108,23 @@ with st.sidebar.form("add_form"):
         st.session_state.actions = pd.concat([st.session_state.actions, pd.DataFrame([new_row])], ignore_index=True)
         st.rerun()
 
-# --- ÁREA PRINCIPAL: VISUALIZAÇÃO DO CAMPO (Sempre visível) ---
+# --- ÁREA PRINCIPAL ---
 
-# Filtros (mesmo vazios, aparecem para preparar a vista)
+# Filtros
 f1, f2 = st.columns(2)
 sel_p = f1.selectbox("Filtrar Jogador:", ["Todos"] + sorted(st.session_state.actions['Jogador'].unique().tolist()))
 sel_a = f2.selectbox("Filtrar Ação:", ["Todas"] + list(action_rules.keys()))
 
-# Lógica de Filtragem
 df_plot = st.session_state.actions.copy()
 if sel_p != "Todos": df_plot = df_plot[df_plot['Jogador'] == sel_p]
 if sel_a != "Todas": df_plot = df_plot[df_plot['Ação'] == sel_a]
 
-# Desenhar o Pitch
+# Desenho do Campo
 pitch = Pitch(pitch_type='uefa', pitch_color=c_theme['pitch'], line_color=c_theme['line'],
               stripe=is_strip, stripe_color=c_theme['stripe'], positional=is_pos,
               corner_arcs=True, goal_type='box')
-
 fig, ax = pitch.draw(figsize=(10, 7))
 
-# Plotar ações se existirem
 for _, row in df_plot.iterrows():
     if row['Visualizacao'] == "Seta":
         pitch.arrows(row.x, row.y, row.end_x, row.end_y, width=2, color=row.Cor, ax=ax, alpha=0.8)
@@ -140,9 +137,21 @@ for _, row in df_plot.iterrows():
 
 st.pyplot(fig)
 
-# --- SEÇÃO DE EXPORTAÇÃO E TABELAS (Apenas se houver dados) ---
+# --- TABELA E ESTATÍSTICAS SEMPRE VISÍVEIS ---
+st.subheader("📋 Log de Dados e Estatísticas")
+
 if not st.session_state.actions.empty:
-    # --- PDF GENERATOR ---
+    # Tabela de Estatísticas resumida
+    stats = df_plot.groupby(['Ação', 'Resultado']).size().unstack(fill_value=0)
+    for c in ["Sucesso", "Insucesso"]:
+        if c not in stats.columns: stats[c] = 0
+    stats['Total'] = stats['Sucesso'] + stats['Insucesso']
+    st.table(stats[['Total', 'Sucesso', 'Insucesso']])
+
+    # Tabela de Dados Bruta
+    st.dataframe(df_plot[['Jogador', 'Ação', 'Resultado', 'xG', 'Detalhes']], use_container_width=True)
+
+    # Botões de Exportação
     def generate_pdf(df_filt, fig_pitch, p_name, a_name):
         pdf = FPDF()
         pdf.add_page()
@@ -150,53 +159,28 @@ if not st.session_state.actions.empty:
             pdf.image(fmh_logo_path, x=165, y=10, w=30)
         pdf.set_font("Helvetica", "B", 16)
         pdf.set_y(15)
-        pdf.cell(150, 10, "Relatório de Ações Tecnico-Táticas", ln=True)
+        pdf.cell(150, 10, "Relatorio de Ações Tecnico-Taticas", ln=True)
         pdf.set_font("Helvetica", "", 11)
         pdf.cell(150, 7, "Faculdade de Motricidade Humana", ln=True)
-        pdf.cell(150, 7, f"Filtro: {p_name} | {a_name}", ln=True)
         
         img_buf = io.BytesIO()
         fig_pitch.savefig(img_buf, format="png", bbox_inches='tight', dpi=150)
         pdf.image(img_buf, x=15, y=45, w=180)
-        
         pdf.set_y(175)
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(190, 10, "Resumo Estatístico", ln=True)
+        
         pdf.set_font("Helvetica", "B", 10)
-        pdf.set_fill_color(240, 240, 240)
-
-        if a_name == "Remate":
-            cols, ws = ["Ação", "Golos", "Falhados", "Total", "xG Acum."], [40, 35, 35, 35, 45]
-        elif a_name in ["Interceção", "Bloqueio", "Condução"]:
-            cols, ws = ["Ação", "Total"], [95, 95]
-        else:
-            cols, ws = ["Ação", "Sucesso", "Insucesso", "Total"], [50, 45, 45, 50]
-
-        for i, col in enumerate(cols):
-            pdf.cell(ws[i], 8, col, border=1, align="C", fill=True)
-        pdf.ln()
-
-        pdf.set_font("Helvetica", "", 10)
+        pdf.cell(190, 10, "Resumo de Performance", ln=True)
         for act in df_filt['Ação'].unique():
-            temp = df_filt[df_filt['Ação'] == act]
-            s, f, tot = len(temp[temp['Resultado'] == 'Sucesso']), len(temp[temp['Resultado'] == 'Insucesso']), len(temp)
-            xg_val = temp['xG'].sum()
-            
-            if act == "Remate": data = [act, str(s), str(f), str(tot), f"{xg_val:.2f}"]
-            elif not action_rules[act]['tem_resultado']: data = [act, str(tot)]
-            else: data = [act, str(s), str(f), str(tot)]
-            
-            for i, val in enumerate(data):
-                pdf.cell(ws[i] if i < len(ws) else 30, 8, val, border=1, align="C")
-            pdf.ln()
+            tot = len(df_filt[df_filt['Ação'] == act])
+            pdf.cell(190, 7, f"- {act}: {tot} acoes registadas", ln=True)
         return bytes(pdf.output())
 
-    st.subheader("📄 Exportação")
+    st.markdown("---")
     pdf_out = generate_pdf(df_plot, fig, sel_p, sel_a)
-    st.download_button("📥 Descarregar PDF FMH", pdf_out, f"relatorio_FMH_{sel_p}.pdf", "application/pdf")
+    st.download_button("📥 Descarregar PDF FMH", pdf_out, f"relatorio_FMH.pdf", "application/pdf")
     
     if st.button("Limpar Tudo"):
         st.session_state.actions = pd.DataFrame(columns=st.session_state.actions.columns)
         st.rerun()
 else:
-    st.info("O campo está pronto. Use a barra lateral para registar as ações e gerar o relatório.")
+    st.info("Aguardando inserção de dados para gerar tabelas e relatórios.")
