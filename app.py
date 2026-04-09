@@ -10,7 +10,7 @@ from streamlit_image_coordinates import streamlit_image_coordinates
 from PIL import Image
 
 # 1. CONFIGURAÇÃO DA PÁGINA
-st.set_page_config(page_title="Relatório Tecnico-Tático FMH", layout="wide")
+st.set_page_config(page_title="Relatório Tecnico-Tático", layout="wide")
 
 # --- FICHEIRO DO LOGO ---
 fmh_logo_path = "faculdade_de_motricidade_humana_logo.jpeg"
@@ -229,6 +229,6 @@ if not st.session_state.actions.empty:
         else: p_final.scatter(r.x, r.y, s=180, c=r.Cor, marker='o' if r.Resultado=='Sucesso' else 'X', ax=ax_f)
     
     pdf_out = generate_pdf(df_view, fig_f, report_custom_title, sel_a)
-    st.download_button("📥 Descarregar PDF FMH", pdf_out, "relatorio_FMH.pdf", "application/pdf")
+    st.download_button("📥 Descarregar PDF", pdf_out, "relatorio_FMH.pdf", "application/pdf")
 else:
     st.info("O campo está pronto. Usa os cliques para registar ações.")
