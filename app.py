@@ -54,8 +54,8 @@ action_rules = {
     'Desarme': {'cor': '#1abc9c', 'seta': False, 'tem_resultado': True}
 }
 
-# --- SIDEBAR: CONFIGURAÇÃO ---
-st.sidebar.header("🎨 Configuração do Campo")
+# --- SIDEBAR ---
+st.sidebar.header("🎨 Configuração")
 p_theme = st.sidebar.selectbox("Tema:", ["Branco Total", "Grass", "Dark", "Midnight"])
 is_strip = st.sidebar.checkbox("Relvado Cortado?", value=False)
 is_pos = st.sidebar.checkbox("Linhas Posicionais?", value=False)
@@ -70,9 +70,9 @@ c_theme = themes[p_theme]
 
 st.sidebar.markdown("---")
 st.sidebar.header("📝 Dados do Relatório")
-report_custom_title = st.sidebar.text_input("Título do Relatório PDF", "Relatório Técnico-Tático")
+report_custom_title = st.sidebar.text_input("Título do PDF", "Relatório Técnico-Tático")
 
-# --- SIDEBAR: REGISTO ---
+# --- REGISTO ---
 st.sidebar.markdown("---")
 st.sidebar.header("🕹️ Registar Ação")
 p_input = st.sidebar.text_input("Jogador (opcional)")
@@ -111,7 +111,6 @@ with st.sidebar.form("add_form"):
         st.rerun()
 
 # --- ÁREA PRINCIPAL ---
-st.subheader("🔍 Filtros")
 f_col1, f_col2 = st.columns(2)
 sel_p = f_col1.selectbox("Filtrar Jogador:", ["Todos"] + sorted(st.session_state.actions['Jogador'].unique().tolist()))
 sel_a = f_col2.selectbox("Filtrar Ação:", ["Todas"] + list(action_rules.keys()))
@@ -130,10 +129,10 @@ for _, row in df_plot.iterrows():
         pitch.arrows(row.x, row.y, row.end_x, row.end_y, width=2, color=row.Cor, ax=ax, alpha=0.8)
     else:
         ms = 180 + (row['xG'] * 1800) if row['Ação'] == 'Remate' else 180
-        marker = 'o'
+        m = 'o'
         if action_rules[row['Ação']]['tem_resultado'] and row['Resultado'] == 'Insucesso':
-            marker = 'X'
-        pitch.scatter(row.x, row.y, s=ms, c=row.Cor, edgecolors='gray' if p_theme=="Branco Total" else 'white', marker=marker, ax=ax, zorder=3)
+            m = 'X'
+        pitch.scatter(row.x, row.y, s=ms, c=row.Cor, edgecolors='gray' if p_theme=="Branco Total" else 'white', marker=m, ax=ax, zorder=3)
 st.pyplot(fig)
 
 # --- EXPORTAÇÃO E GESTÃO ---
@@ -144,18 +143,15 @@ if not st.session_state.actions.empty:
         if os.path.exists(fmh_logo_path):
             pdf.image(fmh_logo_path, x=165, y=10, w=30)
         
-        # Cabeçalho Limpo
         pdf.set_font("Helvetica", "B", 18); pdf.set_y(15)
         pdf.cell(150, 10, report_title, ln=True)
         pdf.set_font("Helvetica", "", 10)
         pdf.cell(150, 6, "Faculdade de Motricidade Humana", ln=True)
         
-        # Campo
         img_buf = io.BytesIO()
         fig_pitch.savefig(img_buf, format="png", bbox_inches='tight', dpi=150)
         pdf.image(img_buf, x=15, y=35, w=180)
         
-        # Legenda só se for relatório Geral ("Todas")
         pdf.set_y(172)
         if current_sel_a == "Todas":
             pdf.set_font("Helvetica", "B", 10)
@@ -166,45 +162,78 @@ if not st.session_state.actions.empty:
                 pdf.set_fill_color(r, g, b)
                 pdf.rect(pdf.get_x(), pdf.get_y()+1, 3, 3, 'F')
                 pdf.set_x(pdf.get_x() + 5)
-                pdf.cell(28, 5, act) # Nome limpo da ação
+                pdf.cell(28, 5, act)
             pdf.ln(8)
-        else:
-            pdf.ln(2)
 
-        # Tabela Estatística Detalhada
+        # TABELA
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(190, 8, "Tabela de Resultados:", ln=True)
         pdf.set_font("Helvetica", "B", 9)
         pdf.set_fill_color(230, 230, 230)
         
-        # Verificar se existe Remate para mostrar xG
         has_remate = "Remate" in df_filt['Ação'].values
         if has_remate:
-            headers = ["Acao", "Sucesso", "Insucesso", "Total", "xG Acum."]
-            ws = [45, 35, 35, 35, 40]
+            headers, ws = ["Acao", "Sucesso", "Insucesso", "Total", "xG Acum."], [45, 35, 35, 35, 40]
         else:
-            headers = ["Acao", "Sucesso", "Insucesso", "Total"]
-            ws = [55, 45, 45, 45]
+            headers, ws = ["Acao", "Sucesso", "Insucesso", "Total"], [55, 45, 45, 45]
 
         for i, h in enumerate(headers):
             pdf.cell(ws[i], 8, h, border=1, align="C", fill=True)
         pdf.ln()
 
         pdf.set_font("Helvetica", "", 9)
+        sum_suc, sum_ins, sum_tot, sum_xg = 0, 0, 0, 0.0
+        
         for act in df_filt['Ação'].unique():
             temp = df_filt[df_filt['Ação'] == act]
-            suc = str(len(temp[temp['Resultado'] == 'Sucesso'])) if action_rules[act]['tem_resultado'] else "-"
-            ins = str(len(temp[temp['Resultado'] == 'Insucesso'])) if action_rules[act]['tem_resultado'] else "-"
-            total = str(len(temp))
+            s = len(temp[temp['Resultado'] == 'Sucesso']) if action_rules[act]['tem_resultado'] else 0
+            i_f = len(temp[temp['Resultado'] == 'Insucesso']) if action_rules[act]['tem_resultado'] else 0
+            t = len(temp)
+            xg_val = temp['xG'].sum() if act == "Remate" else 0.0
             
+            # Acumular para o TOTAL
+            sum_suc += s; sum_ins += i_f; sum_tot += t; sum_xg += xg_val
+
             pdf.cell(ws[0], 8, act, border=1, align="C")
-            pdf.cell(ws[1], 8, suc, border=1, align="C")
-            pdf.cell(ws[2], 8, ins, border=1, align="C")
-            pdf.cell(ws[3], 8, total, border=1, align="C")
-            if has_remate:
-                xg_sum = f"{temp['xG'].sum():.2f}" if act == "Remate" else "-"
-                pdf.cell(ws[4], 8, xg_sum, border=1, align="C")
+            pdf.cell(ws[1], 8, str(s) if action_rules[act]['tem_resultado'] else "-", border=1, align="C")
+            pdf.cell(ws[2], 8, str(i_f) if action_rules[act]['tem_resultado'] else "-", border=1, align="C")
+            pdf.cell(ws[3], 8, str(t), border=1, align="C")
+            if has_remate: pdf.cell(ws[4], 8, f"{xg_val:.2f}" if act == "Remate" else "-", border=1, align="C")
             pdf.ln()
+
+        # LINHA DE TOTAL
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_fill_color(245, 245, 245)
+        pdf.cell(ws[0], 8, "TOTAL", border=1, align="C", fill=True)
+        pdf.cell(ws[1], 8, str(sum_suc), border=1, align="C", fill=True)
+        pdf.cell(ws[2], 8, str(sum_ins), border=1, align="C", fill=True)
+        pdf.cell(ws[3], 8, str(sum_tot), border=1, align="C", fill=True)
+        if has_remate: pdf.cell(ws[4], 8, f"{sum_xg:.2f}", border=1, align="C", fill=True)
+        pdf.ln(10)
+
+        # PERCENTAGEM DE SUCESSO
+        if (sum_suc + sum_ins) > 0:
+            perc = (sum_suc / (sum_suc + sum_ins)) * 100
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.cell(190, 8, f"Percentagem de Sucesso Global (Acoes com resultado): {perc:.1f}%", ln=True)
+            
+        return bytes(pdf.output())
+
+    st.subheader("📄 Exportação")
+    pdf_bytes = generate_pdf(df_plot, fig, report_custom_title, sel_a)
+    st.download_button("📥 Descarregar PDF", pdf_bytes, "relatorio_FMH.pdf", "application/pdf")
+    
+    # Resumo na App
+    if len(df_plot) > 0:
+        s_app = len(df_plot[df_plot['Resultado'] == 'Sucesso'])
+        i_app = len(df_plot[df_plot['Resultado'] == 'Insucesso'])
+        if (s_app + i_app) > 0:
+            st.write(f"**Eficácia Atual:** {(s_app/(s_app+i_app))*100:.1f}%")
+
+    if st.button("🚨 Limpar Tudo"):
+        st.session_state.actions = pd.DataFrame(columns=df.columns); st.rerun()
+else:
+    st.info("Registe ações para gerar o mapa.")
             
         return bytes(pdf.output())
 
