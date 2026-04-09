@@ -11,7 +11,7 @@ import os
 st.set_page_config(page_title="Relatório Tecnico-Tático FMH", layout="wide")
 
 # --- CONFIGURAÇÃO DO LOGO ---
-fmh_logo_path = # Agora o código procura o ficheiro dentro da própria pasta do projeto
+
 fmh_logo_path = "faculdade_de_motricidade_humana_logo.jpeg"
 # --- CABEÇALHO ---
 col_logo, col_title = st.columns([1, 4])
