@@ -8,7 +8,7 @@ from fpdf import FPDF
 import os
 
 # Configuração da Página
-st.set_page_config(page_title="Relatório Tecnico-Tático FMH", layout="wide")
+st.set_page_config(page_title="Relatório Tecnico-Tático", layout="wide")
 
 # --- CONFIGURAÇÃO DO LOGO ---
 
@@ -191,4 +191,4 @@ if not st.session_state.actions.empty:
     if st.button("Limpar Tudo"):
         st.session_state.actions = pd.DataFrame(columns=df.columns); st.rerun()
 else:
-    st.info("Insira ações para gerar o mapa FMH.")
+    st.info("Insira ações para gerar o mapa.")
