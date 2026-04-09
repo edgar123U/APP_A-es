@@ -8,7 +8,7 @@ from fpdf import FPDF
 import os
 
 # Configuração da Página
-st.set_page_config(page_title="Relatório Tecnico-Tático FMH", layout="wide")
+st.set_page_config(page_title="Relatório Tecnico-Tático", layout="wide")
 
 # --- CONFIGURAÇÃO DO LOGO ---
 fmh_logo_path = "faculdade_de_motricidade_humana_logo.jpeg"
@@ -141,20 +141,13 @@ if not st.session_state.actions.empty:
     col_t, col_m = st.columns([2, 1])
     with col_t:
         st.subheader("📋 Log de Ações")
-        
-        # DEFINIR COLUNAS A EXIBIR DINAMICAMENTE
-        cols_to_show = ['Jogador', 'Ação', 'Resultado']
-        if sel_a == "Remate" or sel_a == "Todas":
-            cols_to_show.extend(['xG', 'Detalhes'])
-            
         log_view = df_plot.copy()
         log_view['xG'] = log_view.apply(lambda r: f"{r.xG:.2f}" if r.Ação == "Remate" else "-", axis=1)
         
-        # Se filtrarmos por algo que NÃO é remate, removemos as colunas xG e Detalhes da vista
-        if sel_a != "Remate" and sel_a != "Todas":
-            st.dataframe(log_view[['Jogador', 'Ação', 'Resultado']], use_container_width=True)
-        else:
-            st.dataframe(log_view[cols_to_show], use_container_width=True)
+        # Filtrar colunas visíveis na app
+        cols = ['Jogador', 'Ação', 'Resultado']
+        if sel_a in ["Remate", "Todas"]: cols += ['xG', 'Detalhes']
+        st.dataframe(log_view[cols], use_container_width=True)
     
     with col_m:
         st.subheader("🗑️ Gestão")
@@ -169,32 +162,61 @@ if not st.session_state.actions.empty:
         if st.button("🚨 Limpar Tudo"):
             st.session_state.actions = pd.DataFrame(columns=st.session_state.actions.columns); st.rerun()
 
-    # --- PDF ---
+    # --- PDF GENERATOR ---
     def generate_pdf(df_filt, fig_pitch):
         pdf = FPDF()
         pdf.add_page()
-        if os.path.exists(fmh_logo_path): pdf.image(fmh_logo_path, x=165, y=10, w=30)
+        if os.path.exists(fmh_logo_path):
+            pdf.image(fmh_logo_path, x=165, y=10, w=30)
+        
         pdf.set_font("Helvetica", "B", 16); pdf.set_y(15)
         pdf.cell(150, 10, "Relatorio de Acoes Tecnico-Taticas", ln=True)
         pdf.set_font("Helvetica", "", 11); pdf.cell(150, 7, "Faculdade de Motricidade Humana", ln=True)
+        
+        # Imagem do Campo
         img_buf = io.BytesIO()
         fig_pitch.savefig(img_buf, format="png", bbox_inches='tight', dpi=150)
         pdf.image(img_buf, x=15, y=45, w=180)
-        pdf.set_y(175); pdf.set_font("Helvetica", "B", 10); pdf.cell(190, 10, "Resumo:", ln=True)
         
+        # Tabela Estatística no PDF
+        pdf.set_y(175)
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(190, 10, "Tabela de Contagens Detalhada", ln=True)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_fill_color(230, 230, 230)
+        
+        # Cabeçalho da Tabela
+        headers = ["Ação", "Sucesso", "Insucesso", "Total", "xG Acum."]
+        widths = [45, 35, 35, 35, 40]
+        for i, h in enumerate(headers):
+            pdf.cell(widths[i], 8, h, border=1, align="C", fill=True)
+        pdf.ln()
+
+        pdf.set_font("Helvetica", "", 9)
         for act in df_filt['Ação'].unique():
             temp = df_filt[df_filt['Ação'] == act]
-            tot = len(temp)
-            # NO PDF: xG SÓ APARECE NA LINHA DO REMATE
-            if act == "Remate":
-                xg_acum = temp['xG'].sum()
-                pdf.cell(190, 7, f"- {act}: {tot} acoes | xG Acumulado: {xg_acum:.2f}", ln=True)
+            
+            # Contagens baseadas nas regras
+            if action_rules[act]['tem_resultado']:
+                suc = str(len(temp[temp['Resultado'] == 'Sucesso']))
+                ins = str(len(temp[temp['Resultado'] == 'Insucesso']))
             else:
-                pdf.cell(190, 7, f"- {act}: {tot} acoes", ln=True)
+                suc, ins = "-", "-" # Para Interceção, Bloqueio, Condução
+                
+            total = str(len(temp))
+            xg_sum = f"{temp['xG'].sum():.2f}" if act == "Remate" else "-"
+            
+            pdf.cell(widths[0], 8, act, border=1, align="C")
+            pdf.cell(widths[1], 8, suc, border=1, align="C")
+            pdf.cell(widths[2], 8, ins, border=1, align="C")
+            pdf.cell(widths[3], 8, total, border=1, align="C")
+            pdf.cell(widths[4], 8, xg_sum, border=1, align="C")
+            pdf.ln()
+            
         return bytes(pdf.output())
 
     st.markdown("---")
     pdf_bytes = generate_pdf(df_plot, fig)
-    st.download_button("📥 Descarregar PDF", pdf_bytes, "relatorio_FMH.pdf", "application/pdf")
+    st.download_button("📥 Descarregar PDF ", pdf_bytes, "relatorio_FMH.pdf", "application/pdf")
 else:
-    st.info("Regista ações para gerar relatórios.")
+    st.info("Registe ações para gerar o relatório com as tabelas.")
