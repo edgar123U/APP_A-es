@@ -98,8 +98,6 @@ with st.sidebar.form("add_form"):
     
     if st.form_submit_button("Adicionar Ação"):
         final_p = p_input if p_input.strip() != "" else "Geral/Equipa"
-        
-        # xG SÓ PARA REMATES
         xg_val = calculate_advanced_xg(x, y, is_h, sit_p) if a_type == 'Remate' else 0.0
         detalhes_extra = f"{sit_p}{' (Cabeça)' if is_h else ''}" if a_type == 'Remate' else "-"
         
@@ -143,10 +141,20 @@ if not st.session_state.actions.empty:
     col_t, col_m = st.columns([2, 1])
     with col_t:
         st.subheader("📋 Log de Ações")
-        # Mostrar xG apenas se for remate na visualização da tabela
+        
+        # DEFINIR COLUNAS A EXIBIR DINAMICAMENTE
+        cols_to_show = ['Jogador', 'Ação', 'Resultado']
+        if sel_a == "Remate" or sel_a == "Todas":
+            cols_to_show.extend(['xG', 'Detalhes'])
+            
         log_view = df_plot.copy()
         log_view['xG'] = log_view.apply(lambda r: f"{r.xG:.2f}" if r.Ação == "Remate" else "-", axis=1)
-        st.dataframe(log_view[['Jogador', 'Ação', 'Resultado', 'xG', 'Detalhes']], use_container_width=True)
+        
+        # Se filtrarmos por algo que NÃO é remate, removemos as colunas xG e Detalhes da vista
+        if sel_a != "Remate" and sel_a != "Todas":
+            st.dataframe(log_view[['Jogador', 'Ação', 'Resultado']], use_container_width=True)
+        else:
+            st.dataframe(log_view[cols_to_show], use_container_width=True)
     
     with col_m:
         st.subheader("🗑️ Gestão")
@@ -177,6 +185,7 @@ if not st.session_state.actions.empty:
         for act in df_filt['Ação'].unique():
             temp = df_filt[df_filt['Ação'] == act]
             tot = len(temp)
+            # NO PDF: xG SÓ APARECE NA LINHA DO REMATE
             if act == "Remate":
                 xg_acum = temp['xG'].sum()
                 pdf.cell(190, 7, f"- {act}: {tot} acoes | xG Acumulado: {xg_acum:.2f}", ln=True)
@@ -186,6 +195,6 @@ if not st.session_state.actions.empty:
 
     st.markdown("---")
     pdf_bytes = generate_pdf(df_plot, fig)
-    st.download_button("📥 Descarregar PDF FMH", pdf_bytes, "relatorio_FMH.pdf", "application/pdf")
+    st.download_button("📥 Descarregar PDF", pdf_bytes, "relatorio_FMH.pdf", "application/pdf")
 else:
-    st.info("O campo está pronto. Registe ações para gerar relatórios.")
+    st.info("Regista ações para gerar relatórios.")
