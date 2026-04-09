@@ -11,7 +11,6 @@ import os
 st.set_page_config(page_title="Relatório Tecnico-Tático FMH", layout="wide")
 
 # --- CONFIGURAÇÃO DO LOGO ---
-# No GitHub, garanta que este ficheiro está na mesma pasta
 fmh_logo_path = "faculdade_de_motricidade_humana_logo.jpeg"
 
 # --- CABEÇALHO ---
@@ -111,9 +110,9 @@ with st.sidebar.form("add_form"):
 # --- ÁREA PRINCIPAL ---
 
 # Filtros
-f1, f2 = st.columns(2)
-sel_p = f1.selectbox("Filtrar Jogador:", ["Todos"] + sorted(st.session_state.actions['Jogador'].unique().tolist()))
-sel_a = f2.selectbox("Filtrar Ação:", ["Todas"] + list(action_rules.keys()))
+f_col1, f_col2 = st.columns(2)
+sel_p = f_col1.selectbox("Filtrar Jogador:", ["Todos"] + sorted(st.session_state.actions['Jogador'].unique().tolist()))
+sel_a = f_col2.selectbox("Filtrar Ação:", ["Todas"] + list(action_rules.keys()))
 
 df_plot = st.session_state.actions.copy()
 if sel_p != "Todos": df_plot = df_plot[df_plot['Jogador'] == sel_p]
@@ -137,50 +136,64 @@ for _, row in df_plot.iterrows():
 
 st.pyplot(fig)
 
-# --- TABELA E ESTATÍSTICAS SEMPRE VISÍVEIS ---
-st.subheader("📋 Log de Dados e Estatísticas")
-
+# --- GESTÃO DE DADOS (Tabelas e Apagar) ---
+st.markdown("---")
 if not st.session_state.actions.empty:
-    # Tabela de Estatísticas resumida
-    stats = df_plot.groupby(['Ação', 'Resultado']).size().unstack(fill_value=0)
-    for c in ["Sucesso", "Insucesso"]:
-        if c not in stats.columns: stats[c] = 0
-    stats['Total'] = stats['Sucesso'] + stats['Insucesso']
-    st.table(stats[['Total', 'Sucesso', 'Insucesso']])
+    col_table, col_manage = st.columns([2, 1])
 
-    # Tabela de Dados Bruta
-    st.dataframe(df_plot[['Jogador', 'Ação', 'Resultado', 'xG', 'Detalhes']], use_container_width=True)
+    with col_table:
+        st.subheader("📋 Log de Ações")
+        st.dataframe(df_plot[['Jogador', 'Ação', 'Resultado', 'xG', 'Detalhes']], use_container_width=True)
 
-    # Botões de Exportação
-    def generate_pdf(df_filt, fig_pitch, p_name, a_name):
+    with col_manage:
+        st.subheader("🗑️ Gestão de Ações")
+        
+        # Botão para apagar a última
+        if st.button("Apagar Última Ação"):
+            st.session_state.actions = st.session_state.actions.iloc[:-1]
+            st.rerun()
+
+        # Selecionar ação específica para apagar
+        action_to_delete = st.selectbox(
+            "Apagar por Índice:", 
+            options=st.session_state.actions.index,
+            format_func=lambda x: f"ID {x}: {st.session_state.actions.loc[x, 'Jogador']} - {st.session_state.actions.loc[x, 'Ação']}"
+        )
+        if st.button("Confirmar Apagar Selecionada"):
+            st.session_state.actions = st.session_state.actions.drop(action_to_delete).reset_index(drop=True)
+            st.rerun()
+
+        if st.button("🚨 Limpar Tudo"):
+            st.session_state.actions = pd.DataFrame(columns=st.session_state.actions.columns)
+            st.rerun()
+
+    # --- PDF EXPORT ---
+    def generate_pdf(df_filt, fig_pitch):
         pdf = FPDF()
         pdf.add_page()
         if os.path.exists(fmh_logo_path):
             pdf.image(fmh_logo_path, x=165, y=10, w=30)
         pdf.set_font("Helvetica", "B", 16)
         pdf.set_y(15)
-        pdf.cell(150, 10, "Relatorio de Ações Tecnico-Taticas", ln=True)
+        pdf.cell(150, 10, "Relatorio de Acoes Tecnico-Taticas", ln=True)
         pdf.set_font("Helvetica", "", 11)
         pdf.cell(150, 7, "Faculdade de Motricidade Humana", ln=True)
         
         img_buf = io.BytesIO()
         fig_pitch.savefig(img_buf, format="png", bbox_inches='tight', dpi=150)
         pdf.image(img_buf, x=15, y=45, w=180)
-        pdf.set_y(175)
         
+        pdf.set_y(175)
         pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(190, 10, "Resumo de Performance", ln=True)
+        pdf.cell(190, 10, "Resumo:", ln=True)
         for act in df_filt['Ação'].unique():
             tot = len(df_filt[df_filt['Ação'] == act])
-            pdf.cell(190, 7, f"- {act}: {tot} acoes registadas", ln=True)
+            pdf.cell(190, 7, f"- {act}: {tot} acoes", ln=True)
         return bytes(pdf.output())
 
     st.markdown("---")
-    pdf_out = generate_pdf(df_plot, fig, sel_p, sel_a)
+    st.subheader("📄 Exportar PDF")
+    pdf_out = generate_pdf(df_plot, fig)
     st.download_button("📥 Descarregar PDF FMH", pdf_out, f"relatorio_FMH.pdf", "application/pdf")
-    
-    if st.button("Limpar Tudo"):
-        st.session_state.actions = pd.DataFrame(columns=st.session_state.actions.columns)
-        st.rerun()
 else:
-    st.info("Aguardando inserção de dados para gerar tabelas e relatórios.")
+    st.info("Aguardando inserção de dados.")
