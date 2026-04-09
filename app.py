@@ -222,7 +222,7 @@ if not st.session_state.actions.empty:
     with col_btn1:
         st.subheader("📄 Exportação")
         pdf_bytes = generate_pdf(df_plot, fig, report_custom_title, sel_a)
-        st.download_button("📥 Descarregar PDF FMH", pdf_bytes, "relatorio_FMH.pdf", "application/pdf")
+        st.download_button("📥 Descarregar PDF", pdf_bytes, "relatorio_FMH.pdf", "application/pdf")
     with col_btn2:
         st.subheader("🗑️ Gestão")
         if st.button("Apagar Ultima"):
