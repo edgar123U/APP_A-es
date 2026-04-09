@@ -4,3 +4,4 @@ matplotlib
 pandas
 numpy
 fpdf2
+treamlit-image-coordinates
