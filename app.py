@@ -8,22 +8,23 @@ from fpdf import FPDF
 import os
 
 # Configuração da Página
-st.set_page_config(page_title="Relatório Tecnico-Tático", layout="wide")
+st.set_page_config(page_title="Relatório Tecnico-Tático FMH", layout="wide")
 
 # --- CONFIGURAÇÃO DO LOGO ---
-
+# No GitHub, usa apenas o nome do ficheiro se ele estiver na mesma pasta
 fmh_logo_path = "faculdade_de_motricidade_humana_logo.jpeg"
+
 # --- CABEÇALHO ---
 col_logo, col_title = st.columns([1, 4])
 with col_logo:
     if os.path.exists(fmh_logo_path):
         st.image(fmh_logo_path, width=150)
     else:
-        st.info("Logo FMH não detetado.")
+        st.info("Logo FMH")
 with col_title:
     st.title("Relatório de Ações Tecnico-Táticas")
 
-# 1. Estado da Sessão
+# 1. Estado da Sessão (Base de Dados)
 if 'actions' not in st.session_state:
     st.session_state.actions = pd.DataFrame(columns=[
         'Jogador', 'Ação', 'x', 'y', 'end_x', 'end_y', 'Resultado', 
@@ -44,13 +45,13 @@ def calculate_advanced_xg(x, y, is_header, sit_previa):
     elif sit_previa == "Após Drible": logit += 0.2
     return round(1 / (1 + np.exp(-logit)), 3)
 
-# --- REGRAS DAS AÇÕES (ATUALIZADO) ---
+# --- REGRAS DAS AÇÕES ---
 action_rules = {
     'Passe': {'cor': '#3498db', 'seta': True, 'tem_resultado': True},
-    'Condução': {'cor': '#9b59b6', 'seta': True, 'tem_resultado': False}, # Sem resultado
+    'Condução': {'cor': '#9b59b6', 'seta': True, 'tem_resultado': False},
     'Remate': {'cor': '#f1c40f', 'seta': False, 'tem_resultado': True},
-    'Interceção': {'cor': '#2ecc71', 'seta': False, 'tem_resultado': False}, # Sem resultado
-    'Bloqueio': {'cor': '#e67e22', 'seta': False, 'tem_resultado': False},  # Sem resultado
+    'Interceção': {'cor': '#2ecc71', 'seta': False, 'tem_resultado': False},
+    'Bloqueio': {'cor': '#e67e22', 'seta': False, 'tem_resultado': False},
     'Desarme': {'cor': '#1abc9c', 'seta': False, 'tem_resultado': True}
 }
 
@@ -107,34 +108,40 @@ with st.sidebar.form("add_form"):
         st.session_state.actions = pd.concat([st.session_state.actions, pd.DataFrame([new_row])], ignore_index=True)
         st.rerun()
 
-# --- ÁREA PRINCIPAL ---
+# --- ÁREA PRINCIPAL: VISUALIZAÇÃO DO CAMPO (Sempre visível) ---
+
+# Filtros (mesmo vazios, aparecem para preparar a vista)
+f1, f2 = st.columns(2)
+sel_p = f1.selectbox("Filtrar Jogador:", ["Todos"] + sorted(st.session_state.actions['Jogador'].unique().tolist()))
+sel_a = f2.selectbox("Filtrar Ação:", ["Todas"] + list(action_rules.keys()))
+
+# Lógica de Filtragem
+df_plot = st.session_state.actions.copy()
+if sel_p != "Todos": df_plot = df_plot[df_plot['Jogador'] == sel_p]
+if sel_a != "Todas": df_plot = df_plot[df_plot['Ação'] == sel_a]
+
+# Desenhar o Pitch
+pitch = Pitch(pitch_type='uefa', pitch_color=c_theme['pitch'], line_color=c_theme['line'],
+              stripe=is_strip, stripe_color=c_theme['stripe'], positional=is_pos,
+              corner_arcs=True, goal_type='box')
+
+fig, ax = pitch.draw(figsize=(10, 7))
+
+# Plotar ações se existirem
+for _, row in df_plot.iterrows():
+    if row['Visualizacao'] == "Seta":
+        pitch.arrows(row.x, row.y, row.end_x, row.end_y, width=2, color=row.Cor, ax=ax, alpha=0.8)
+    else:
+        ms = 180 + (row['xG'] * 1800) if row['Ação'] == 'Remate' else 180
+        marker = 'o'
+        if action_rules[row['Ação']]['tem_resultado'] and row['Resultado'] == 'Insucesso':
+            marker = 'X'
+        pitch.scatter(row.x, row.y, s=ms, c=row.Cor, edgecolors='gray' if pitch_theme=="Branco Total" else 'white', marker=marker, ax=ax, zorder=3)
+
+st.pyplot(fig)
+
+# --- SEÇÃO DE EXPORTAÇÃO E TABELAS (Apenas se houver dados) ---
 if not st.session_state.actions.empty:
-    df = st.session_state.actions
-    f1, f2 = st.columns(2)
-    sel_p = f1.selectbox("Filtrar Jogador:", ["Todos"] + sorted(df['Jogador'].unique().tolist()))
-    sel_a = f2.selectbox("Filtrar Ação:", ["Todas"] + list(action_rules.keys()))
-    
-    df_plot = df.copy()
-    if sel_p != "Todos": df_plot = df_plot[df_plot['Jogador'] == sel_p]
-    if sel_a != "Todas": df_plot = df_plot[df_plot['Ação'] == sel_a]
-
-    pitch = Pitch(pitch_type='uefa', pitch_color=c_theme['pitch'], line_color=c_theme['line'],
-                  stripe=is_strip, stripe_color=c_theme['stripe'], positional=is_pos,
-                  corner_arcs=True, goal_type='box')
-    
-    fig, ax = pitch.draw(figsize=(10, 7))
-    for _, row in df_plot.iterrows():
-        if row['Visualizacao'] == "Seta":
-            pitch.arrows(row.x, row.y, row.end_x, row.end_y, width=2, color=row.Cor, ax=ax, alpha=0.8)
-        else:
-            ms = 180 + (row['xG'] * 1800) if row['Ação'] == 'Remate' else 180
-            marker = 'o'
-            if action_rules[row['Ação']]['tem_resultado'] and row['Resultado'] == 'Insucesso':
-                marker = 'X'
-            pitch.scatter(row.x, row.y, s=ms, c=row.Cor, edgecolors='gray' if pitch_theme=="Branco Total" else 'white', marker=marker, ax=ax, zorder=3)
-    
-    st.pyplot(fig)
-
     # --- PDF GENERATOR ---
     def generate_pdf(df_filt, fig_pitch, p_name, a_name):
         pdf = FPDF()
@@ -158,7 +165,6 @@ if not st.session_state.actions.empty:
         pdf.set_font("Helvetica", "B", 10)
         pdf.set_fill_color(240, 240, 240)
 
-        # Lógica de colunas do PDF baseada na tua nova regra
         if a_name == "Remate":
             cols, ws = ["Ação", "Golos", "Falhados", "Total", "xG Acum."], [40, 35, 35, 35, 45]
         elif a_name in ["Interceção", "Bloqueio", "Condução"]:
@@ -188,7 +194,9 @@ if not st.session_state.actions.empty:
     st.subheader("📄 Exportação")
     pdf_out = generate_pdf(df_plot, fig, sel_p, sel_a)
     st.download_button("📥 Descarregar PDF FMH", pdf_out, f"relatorio_FMH_{sel_p}.pdf", "application/pdf")
+    
     if st.button("Limpar Tudo"):
-        st.session_state.actions = pd.DataFrame(columns=df.columns); st.rerun()
+        st.session_state.actions = pd.DataFrame(columns=st.session_state.actions.columns)
+        st.rerun()
 else:
-    st.info("Insira ações para gerar o mapa.")
+    st.info("O campo está pronto. Use a barra lateral para registar as ações e gerar o relatório.")
