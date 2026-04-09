@@ -6,8 +6,6 @@ import io
 import numpy as np
 from fpdf import FPDF
 import os
-from streamlit_image_coordinates import streamlit_image_coordinates
-from PIL import Image
 
 # 1. CONFIGURAÇÃO DA PÁGINA
 st.set_page_config(page_title="Relatório Tecnico-Tático", layout="wide")
@@ -15,21 +13,19 @@ st.set_page_config(page_title="Relatório Tecnico-Tático", layout="wide")
 # --- FICHEIRO DO LOGO ---
 fmh_logo_path = "faculdade_de_motricidade_humana_logo.jpeg"
 
-# 2. ESTADO DA SESSÃO (PERSISTÊNCIA)
+# 2. ESTADO DA SESSÃO
 if 'actions' not in st.session_state:
     st.session_state.actions = pd.DataFrame(columns=[
         'Jogador', 'Ação', 'x', 'y', 'end_x', 'end_y', 'Resultado', 
         'Visualizacao', 'Cor', 'xG', 'Detalhes'
     ])
-if 'temp_coords' not in st.session_state:
-    st.session_state.temp_coords = None
 
 # --- FUNÇÃO xG ---
 def calculate_advanced_xg(x, y, is_header, sit_previa):
     goal_x, goal_y = 105, 34
     dist = np.sqrt((105 - x)**2 + (34 - y)**2)
-    a = np.sqrt((105 - x)**2 + (34 - 3.66 - y)**2)
-    b = np.sqrt((105 - x)**2 + (34 + 3.66 - y)**2)
+    a = np.sqrt((goal_x - x)**2 + (34 - 3.66 - y)**2)
+    b = np.sqrt((goal_x - x)**2 + (34 + 3.66 - y)**2)
     cos_angle = np.clip((a**2 + b**2 - 7.32**2) / (2 * a * b), -1, 1)
     angle = np.arccos(cos_angle)
     logit = -0.5 + (1.35 * angle) - (0.11 * dist)
@@ -55,12 +51,12 @@ with col_l:
 with col_t:
     st.title("Relatório de Ações Tecnico-Táticas")
 
-# 4. SIDEBAR
+# 4. SIDEBAR - CONFIGURAÇÕES E REGISTO
 st.sidebar.header("🎨 Estética e Relatório")
 p_theme = st.sidebar.selectbox("Tema do Campo:", ["Branco Total", "Grass", "Dark", "Midnight"])
 is_strip = st.sidebar.checkbox("Relvado Cortado?", value=False)
 is_pos = st.sidebar.checkbox("Linhas Posicionais?", value=False)
-report_custom_title = st.sidebar.text_input("Título do PDF", "Relatório Técnico-Tático")
+report_custom_title = st.sidebar.text_input("Título do Relatório PDF", "Relatório Técnico-Tático")
 
 themes = {
     "Branco Total": {"pitch": "white", "line": "black", "stripe": "#f2f2f2"},
@@ -72,110 +68,102 @@ c_theme = themes[p_theme]
 
 st.sidebar.markdown("---")
 st.sidebar.header("🕹️ Registar Ação")
-p_input = st.sidebar.text_input("Jogador", placeholder="Geral")
+p_input = st.sidebar.text_input("Jogador (opcional)")
 a_type = st.sidebar.selectbox("Tipo de Ação", list(action_rules.keys()))
 rule = action_rules[a_type]
 
-# Lógica condicional para Remate
+# Variáveis específicas de Remate
 is_h, sit_p = False, "Jogo Corrido"
 v_mode = "Seta" if rule['seta'] else "Marca"
 if a_type == 'Remate':
-    v_mode = st.sidebar.radio("Estilo Visual:", ["Marca", "Seta"], horizontal=True)
+    v_mode = st.sidebar.radio("Visualização:", ["Marca", "Seta"], horizontal=True)
     is_h = st.sidebar.checkbox("De Cabeça?")
     sit_p = st.sidebar.selectbox("Origem:", ["Jogo Corrido", "Após Cruzamento", "Após Drible"])
 
-res = "Sucesso"
-if rule['tem_resultado']:
-    res = st.sidebar.radio("Resultado", ["Sucesso", "Insucesso"], horizontal=True)
-
-# 5. ÁREA PRINCIPAL - FILTROS E CAMPO
-f1, f2 = st.columns(2)
-sel_p = f1.selectbox("Filtrar Jogador:", ["Todos"] + sorted(st.session_state.actions['Jogador'].unique().tolist()))
-sel_a = f2.selectbox("Filtrar Ação:", ["Todas"] + list(action_rules.keys()))
-
-df_view = st.session_state.actions.copy()
-if sel_p != "Todos": df_view = df_view[df_view['Jogador'] == sel_p]
-if sel_a != "Todas": df_view = df_view[df_view['Ação'] == sel_a]
-
-# Desenhar imagem para clique
-def get_pitch_pil(df_plot):
-    pitch = Pitch(pitch_type='uefa', pitch_color=c_theme['pitch'], line_color=c_theme['line'],
-                  stripe=is_strip, stripe_color=c_theme['stripe'], positional=is_pos,
-                  corner_arcs=True, goal_type='box')
-    fig, ax = pitch.draw(figsize=(10, 6.47))
-    for _, row in df_plot.iterrows():
-        if row['Visualizacao'] == "Seta":
-            pitch.arrows(row.x, row.y, row.end_x, row.end_y, width=1.5, headwidth=6, headlength=6, color=row.Cor, ax=ax, zorder=4)
-        else:
-            ms = 180 + (row['xG'] * 1800) if row['Ação'] == 'Remate' else 180
-            m = 'o' if row['Resultado'] == 'Sucesso' else 'X'
-            pitch.scatter(row.x, row.y, s=ms, c=row.Cor, edgecolors='gray' if p_theme=="Branco Total" else 'white', marker=m, ax=ax, zorder=3)
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches='tight', pad_inches=0)
-    plt.close(fig)
-    return Image.open(buf)
-
-st.subheader("📍 Marcar no Campo")
-pil_img = get_pitch_pil(df_view)
-value = streamlit_image_coordinates(pil_img, width=800, key="pitch_click")
-
-if value:
-    x_m = (value['x'] / 800) * 105
-    y_m = 68 - (value['y'] / 518) * 68 
+with st.sidebar.form("add_form"):
+    c1, c2 = st.columns(2)
+    x = c1.slider("X", 0.0, 105.0, 52.5)
+    y = c2.slider("Y", 0.0, 68.0, 34.0)
     
+    ex, ey = x, y
     if v_mode == "Seta":
-        if st.session_state.temp_coords is None:
-            st.session_state.temp_coords = (x_m, y_m)
-            st.rerun()
-        else:
-            xs, ys = st.session_state.temp_coords
-            xg = calculate_advanced_xg(xs, ys, is_h, sit_p) if a_type == 'Remate' else 0.0
-            new_row = {
-                'Jogador': p_input if p_input else "Geral", 'Ação': a_type, 'x': xs, 'y': ys, 'end_x': x_m, 'end_y': y_m,
-                'Resultado': res, 'Visualizacao': v_mode, 'Cor': rule['cor'] if res == "Sucesso" else "#e74c3c",
-                'xG': xg, 'Detalhes': f"{sit_p}{' (Cabeça)' if is_h else ''}" if a_type == 'Remate' else "-"
-            }
-            st.session_state.actions = pd.concat([st.session_state.actions, pd.DataFrame([new_row])], ignore_index=True)
-            st.session_state.temp_coords = None
-            st.rerun()
-    else:
-        xg = calculate_advanced_xg(x_m, y_m, is_h, sit_p) if a_type == 'Remate' else 0.0
+        st.write("🎯 Destino da Seta:")
+        c3, c4 = st.columns(2)
+        ex = c3.slider("X Fim", 0.0, 105.0, 60.0)
+        ey = c4.slider("Y Fim", 0.0, 68.0, 34.0)
+    
+    res = "Sucesso"
+    if rule['tem_resultado']:
+        res = st.radio("Resultado", ["Sucesso", "Insucesso"], horizontal=True)
+    
+    if st.form_submit_button("Adicionar Ação"):
+        final_p = p_input if p_input.strip() != "" else "Geral/Equipa"
+        xg_val = calculate_advanced_xg(x, y, is_h, sit_p) if a_type == 'Remate' else 0.0
         new_row = {
-            'Jogador': p_input if p_input else "Geral", 'Ação': a_type, 'x': x_m, 'y': y_m, 'end_x': x_m, 'end_y': y_m,
-            'Resultado': res, 'Visualizacao': v_mode, 'Cor': rule['cor'] if res == "Sucesso" else "#e74c3c",
-            'xG': xg, 'Detalhes': f"{sit_p}{' (Cabeça)' if is_h else ''}" if a_type == 'Remate' else "-"
+            'Jogador': final_p, 'Ação': a_type, 'x': x, 'y': y, 'end_x': ex, 'end_y': ey,
+            'Resultado': res, 'Visualizacao': v_mode, 
+            'Cor': rule['cor'] if res == "Sucesso" else "#e74c3c",
+            'xG': xg_val, 'Detalhes': f"{sit_p}{' (Cabeça)' if is_h else ''}" if a_type == 'Remate' else "-"
         }
         st.session_state.actions = pd.concat([st.session_state.actions, pd.DataFrame([new_row])], ignore_index=True)
         st.rerun()
 
+# 5. ÁREA PRINCIPAL - FILTROS E CAMPO
+f_col1, f_col2 = st.columns(2)
+sel_p = f_col1.selectbox("Filtrar Jogador:", ["Todos"] + sorted(st.session_state.actions['Jogador'].unique().tolist()))
+sel_a = f_col2.selectbox("Filtrar Ação:", ["Todas"] + list(action_rules.keys()))
+
+df_plot = st.session_state.actions.copy()
+if sel_p != "Todos": df_plot = df_plot[df_plot['Jogador'] == sel_p]
+if sel_a != "Todas": df_plot = df_plot[df_plot['Ação'] == sel_a]
+
+pitch = Pitch(pitch_type='uefa', pitch_color=c_theme['pitch'], line_color=c_theme['line'],
+              stripe=is_strip, stripe_color=c_theme['stripe'], positional=is_pos,
+              corner_arcs=True, goal_type='box')
+fig, ax = pitch.draw(figsize=(10, 7))
+
+for _, row in df_plot.iterrows():
+    if row['Visualizacao'] == "Seta":
+        pitch.arrows(row.x, row.y, row.end_x, row.end_y, width=1.5, headwidth=6, headlength=6, color=row.Cor, ax=ax, zorder=4)
+    else:
+        ms = 180 + (row['xG'] * 1800) if row['Ação'] == 'Remate' else 180
+        marker = 'o'
+        if action_rules[row['Ação']]['tem_resultado'] and row['Resultado'] == 'Insucesso':
+            marker = 'X'
+        pitch.scatter(row.x, row.y, s=ms, c=row.Cor, edgecolors='gray' if p_theme=="Branco Total" else 'white', marker=marker, ax=ax, zorder=3)
+st.pyplot(fig)
+
 # 6. GESTÃO E EXPORTAÇÃO
+st.markdown("---")
 if not st.session_state.actions.empty:
     col_t, col_m = st.columns([2, 1])
-    
     with col_t:
         st.subheader("📋 Log de Ações")
-        st.dataframe(df_view[['Jogador', 'Ação', 'Resultado', 'xG', 'Detalhes']], use_container_width=True)
-
+        st.dataframe(df_plot[['Jogador', 'Ação', 'Resultado', 'xG', 'Detalhes']], use_container_width=True)
     with col_m:
         st.subheader("🗑️ Gestão")
         if st.button("Apagar Última"):
             st.session_state.actions = st.session_state.actions.iloc[:-1]; st.rerun()
+        
+        idx_del = st.selectbox("Apagar por ID:", st.session_state.actions.index, 
+                               format_func=lambda i: f"ID {i}: {st.session_state.actions.loc[i, 'Jogador']} - {st.session_state.actions.loc[i, 'Ação']}")
+        if st.button("Confirmar Eliminação"):
+            st.session_state.actions = st.session_state.actions.drop(idx_del).reset_index(drop=True); st.rerun()
+        
         if st.button("🚨 Limpar Tudo"):
-            # CORREÇÃO DO NameError: df.columns -> st.session_state.actions.columns
-            st.session_state.actions = pd.DataFrame(columns=st.session_state.actions.columns)
-            st.rerun()
+            st.session_state.actions = pd.DataFrame(columns=st.session_state.actions.columns); st.rerun()
 
     # --- PDF GENERATOR ---
-    def generate_pdf(df_filt, fig_p, title_r, current_sel_a):
+    def generate_pdf(df_filt, fig_pitch, report_title, current_sel_a):
         pdf = FPDF()
         pdf.add_page()
         if os.path.exists(fmh_logo_path): pdf.image(fmh_logo_path, x=165, y=10, w=30)
-        pdf.set_font("Helvetica", "B", 18); pdf.set_y(15); pdf.cell(150, 10, title_r, ln=True)
+        pdf.set_font("Helvetica", "B", 18); pdf.set_y(15); pdf.cell(150, 10, report_title, ln=True)
         pdf.set_font("Helvetica", "", 10); pdf.cell(150, 6, "Faculdade de Motricidade Humana", ln=True)
         
-        img_b = io.BytesIO()
-        fig_p.savefig(img_b, format="png", bbox_inches='tight', dpi=150)
-        pdf.image(img_b, x=15, y=35, w=180)
+        img_buf = io.BytesIO()
+        fig_pitch.savefig(img_buf, format="png", bbox_inches='tight', dpi=150)
+        pdf.image(img_buf, x=15, y=35, w=180)
         
         pdf.set_y(172)
         if current_sel_a == "Todas":
@@ -187,7 +175,7 @@ if not st.session_state.actions.empty:
                 pdf.set_x(pdf.get_x() + 5); pdf.cell(28, 5, act)
             pdf.ln(8)
 
-        pdf.set_font("Helvetica", "B", 11); pdf.cell(190, 8, "Resultados:", ln=True)
+        pdf.set_font("Helvetica", "B", 11); pdf.cell(190, 8, "Tabela de Resultados:", ln=True)
         pdf.set_font("Helvetica", "B", 9); pdf.set_fill_color(230, 230, 230)
         
         has_remate = "Remate" in df_filt['Ação'].values
@@ -210,25 +198,29 @@ if not st.session_state.actions.empty:
             if has_remate: pdf.cell(ws[4], 8, f"{temp['xG'].sum():.2f}" if act == "Remate" else "-", border=1, align="C")
             pdf.ln()
 
+        # LINHA TOTAL
         pdf.set_font("Helvetica", "B", 9); pdf.set_fill_color(245, 245, 245)
         pdf.cell(ws[0], 8, "TOTAL", border=1, fill=True, align="C")
         pdf.cell(ws[1], 8, str(s_tot), border=1, fill=True, align="C"); pdf.cell(ws[2], 8, str(i_tot), border=1, fill=True, align="C")
         pdf.cell(ws[3], 8, str(t_tot), border=1, fill=True, align="C")
         if has_remate: pdf.cell(ws[4], 8, f"{x_tot:.2f}", border=1, fill=True, align="C")
         pdf.ln(10)
+        
         if (s_tot + i_tot) > 0:
             perc = (s_tot / (s_tot + i_tot)) * 100
-            pdf.set_font("Helvetica", "B", 10); pdf.cell(190, 8, f"Eficacia Global: {perc:.1f}%", ln=True)
+            pdf.set_font("Helvetica", "B", 10); pdf.cell(190, 8, f"Percentagem de Sucesso Global: {perc:.1f}%", ln=True)
+            
         return bytes(pdf.output())
 
+    st.markdown("---")
     st.subheader("📄 Exportação")
     p_final = Pitch(pitch_type='uefa', pitch_color=c_theme['pitch'], line_color=c_theme['line'], stripe=is_strip, corner_arcs=True, goal_type='box')
     fig_f, ax_f = p_final.draw(figsize=(10, 7))
-    for _, r in df_view.iterrows():
+    for _, r in df_plot.iterrows():
         if r.Visualizacao == "Seta": p_final.arrows(r.x, r.y, r.end_x, r.end_y, width=1.5, headwidth=6, headlength=6, color=r.Cor, ax=ax_f)
         else: p_final.scatter(r.x, r.y, s=180, c=r.Cor, marker='o' if r.Resultado=='Sucesso' else 'X', ax=ax_f)
     
-    pdf_out = generate_pdf(df_view, fig_f, report_custom_title, sel_a)
+    pdf_out = generate_pdf(df_plot, fig_f, report_custom_title, sel_a)
     st.download_button("📥 Descarregar PDF", pdf_out, "relatorio_FMH.pdf", "application/pdf")
 else:
-    st.info("O campo está pronto. Usa os cliques para registar ações.")
+    st.info("O campo está pronto. Registe ações para gerar relatórios.")
